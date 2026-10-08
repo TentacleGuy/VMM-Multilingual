@@ -4,7 +4,7 @@ namespace VMM\Multilingual\Site;
 
 final class LanguageUrls
 {
-    private bool $raw = false;
+    private static int $rawDepth = 0;
     public function locale(): string
     {
         if (is_admin() || (defined('REST_REQUEST') && REST_REQUEST)) return Languages::source();
@@ -30,8 +30,8 @@ final class LanguageUrls
 
     public function rawUrl(int $id): string
     {
-        $this->raw = true;
-        try { return (string) get_permalink($id); } finally { $this->raw = false; }
+        self::$rawDepth++;
+        try { return (string) get_permalink($id); } finally { self::$rawDepth--; }
     }
 
     /** Translate inherited links to local pages; preserve fragments and external destinations. */
@@ -43,7 +43,7 @@ final class LanguageUrls
         $home = wp_parse_url(home_url('/'));
         if (!$parts || strtolower($parts['host'] ?? '') !== strtolower($home['host'] ?? '')) return $link;
         $id = url_to_postid($absolute);
-        if (!$id || get_post_type($id) !== 'page') return $link;
+        if (!$id || !in_array(get_post_type($id), ContentTranslations::types(), true)) return $link;
         $translated = $this->url($id, $locale);
         if (!empty($parts['query'])) {
             parse_str($parts['query'], $query);
@@ -55,6 +55,14 @@ final class LanguageUrls
 
     public function path(int $id, string $locale, array $overrides = []): string
     {
+        if (get_post_type($id) !== 'page') {
+            $path=trim((string)wp_parse_url($this->rawUrl($id),PHP_URL_PATH),'/');
+            $base=trim((string)wp_parse_url(home_url('/'),PHP_URL_PATH),'/');
+            if($base!==''&&str_starts_with($path,$base.'/'))$path=substr($path,strlen($base)+1);
+            $slug=PageMetadata::value($id,$locale,'slug');
+            if($slug!=='')$path=preg_replace_callback('~(^|/)'.preg_quote(get_post($id)->post_name,'~').'(?=/|$)~',static fn($match)=>$match[1].$slug,$path);
+            return $path;
+        }
         if ((int) get_option('page_on_front') === $id && get_option('show_on_front') === 'page') return '';
         $segments = [];
         $slug = static function(int $page) use($locale,$overrides):string {
@@ -72,10 +80,10 @@ final class LanguageUrls
         $settings = Settings::get();
         $path = $this->path($id, $locale);
         $url = home_url('/'.($path === '' ? '' : user_trailingslashit($path)));
-        if (!get_option('permalink_structure')) $url = add_query_arg('page_id', $id, home_url('/'));
+        if (!get_option('permalink_structure')) $url = add_query_arg(get_post_type($id)==='page'?'page_id':'p', $id, home_url('/'));
         if ($locale === Languages::source()) return $url;
         if ($settings['url_mode'] === 'query') return add_query_arg('lang', Languages::all()[$locale]['slug'], $url);
-        if ($settings['url_mode'] === 'directory') return home_url('/'.Languages::all()[$locale]['slug'].'/'.($path === '' ? '' : user_trailingslashit($path)));
+        if ($settings['url_mode'] === 'directory') return !get_option('permalink_structure')?add_query_arg(get_post_type($id)==='page'?'page_id':'p',$id,home_url('/'.Languages::all()[$locale]['slug'].'/')):home_url('/'.Languages::all()[$locale]['slug'].'/'.($path === '' ? '' : user_trailingslashit($path)));
         $parts = wp_parse_url($url);
         return ($parts['scheme'] ?? 'https').'://'.Languages::host($locale).($parts['path'] ?? '/').(isset($parts['query']) ? '?'.$parts['query'] : '');
     }
@@ -89,31 +97,34 @@ final class LanguageUrls
             $code = Languages::all()[$locale]['slug'];
             if ($locale !== Languages::source() && Settings::get()['url_mode'] === 'directory' && ($path === $code || str_starts_with($path, $code.'/'))) $path = ltrim(substr($path, strlen($code)), '/');
             if ($path === '' && $locale !== Languages::source() && Settings::get()['url_mode'] === 'directory') {
+                if(isset($wp->query_vars['p'])||isset($wp->query_vars['page_id']))return;
                 $wp->query_vars = get_option('show_on_front') === 'page' ? ['page_id'=>(int) get_option('page_on_front')] : [];
                 return;
             }
             if ($path === '' || isset($wp->query_vars['page_id']) || isset($wp->query_vars['p'])) return;
-            foreach (get_posts(['post_type'=>'page','post_status'=>['publish','private','draft','pending','future'],'numberposts'=>-1]) as $page) {
+            foreach (get_posts(['post_type'=>ContentTranslations::types(),'post_status'=>['publish','private','draft','pending','future'],'numberposts'=>-1]) as $page) {
                 if ($this->path($page->ID, $locale) === $path) {
                     $wp->query_vars = array_intersect_key($wp->query_vars, array_flip(['preview','preview_id','preview_nonce','paged','page']));
-                    $wp->query_vars['page_id'] = $page->ID;
+                    $wp->query_vars[$page->post_type==='page'?'page_id':'p'] = $page->ID;
+                    if($page->post_type!=='page')$wp->query_vars['post_type']=$page->post_type;
                     return;
                 }
             }
         }, 20);
         add_filter('page_link', function (string $url, int $id): string {
-            return !$this->raw && !is_admin() && !(defined('REST_REQUEST') && REST_REQUEST) ? $this->url($id, $this->locale()) : $url;
+            return self::$rawDepth===0 && !is_admin() && !(defined('REST_REQUEST') && REST_REQUEST) ? $this->url($id, $this->locale()) : $url;
         }, 20, 2);
+        foreach(['post_link','post_type_link'] as $hook)add_filter($hook,function($url,$post){return self::$rawDepth===0&&!is_admin()&&!(defined('REST_REQUEST')&&REST_REQUEST)&&in_array($post->post_type,ContentTranslations::types(),true)?$this->url($post->ID,$this->locale()):$url;},20,2);
         add_filter('redirect_canonical', function ($redirect) {
-            return is_singular('page') && ($this->locale() !== Languages::source() || PageMetadata::value(get_queried_object_id(), Languages::source(), 'slug') !== '') ? false : $redirect;
+            return is_singular(ContentTranslations::types()) && ($this->locale() !== Languages::source() || PageMetadata::value(get_queried_object_id(), Languages::source(), 'slug') !== '') ? false : $redirect;
         });
         add_action('template_redirect', function (): void {
             if ($this->locale() !== Languages::source()) { if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true); nocache_headers(); }
         }, 0);
         add_action('wp_head', function (): void {
-            if (!is_singular('page')) return;
+            if (!is_singular(ContentTranslations::types())) return;
             $id = get_queried_object_id();
-            foreach (array_combine(array_keys(Languages::all()),array_map(static fn($locale)=>str_replace('_','-',$locale),array_keys(Languages::all()))) as $locale=>$code) echo '<link rel="alternate" hreflang="'.esc_attr($code).'" href="'.esc_url($this->url($id, $locale)).'">' . "\n";
+            foreach (array_combine(array_keys(Languages::all()),array_map(static fn($locale)=>str_replace('_','-',$locale),array_keys(Languages::all()))) as $locale=>$code) if(ContentTranslations::available($id,$locale)) echo '<link rel="alternate" hreflang="'.esc_attr($code).'" href="'.esc_url($this->url($id, $locale)).'">' . "\n";
             echo '<link rel="alternate" hreflang="x-default" href="'.esc_url($this->url($id, Languages::source())).'">' . "\n";
         });
     }

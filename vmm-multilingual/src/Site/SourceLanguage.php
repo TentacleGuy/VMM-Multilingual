@@ -21,7 +21,7 @@ final class SourceLanguage
         global $wpdb;
         $locks = [];
         $store = new TranslationStore();
-        $pages = get_posts(['post_type'=>'page','post_status'=>'any','numberposts'=>-1]);
+        $pages = get_posts(['post_type'=>ContentTranslations::types(),'post_status'=>'any','numberposts'=>-1]);
         try {
             $sourceLock='vmm_source_'.get_current_blog_id();
             if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,5)',$sourceLock))!==1)throw new \RuntimeException('Ausgangssprache wird gerade geändert.');
@@ -29,6 +29,9 @@ final class SourceLanguage
             wp_cache_delete('vmm_source_language','options');
             $old=Languages::source();
             if($old===$locale)return;
+            $stringLock='vmm_strings_'.get_current_blog_id();
+            if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,5)',$stringLock))!==1)throw new \RuntimeException('Plugin-Inhalte werden gerade gespeichert.');
+            $locks[]=$stringLock;
             // Same locks as editor saves: a source change cannot race an open/save operation.
             foreach ($pages as $page) {
                 $key = 'vmm_'.get_current_blog_id().'_'.$page->ID;
@@ -36,8 +39,20 @@ final class SourceLanguage
                 $locks[] = $key;
             }
             $wpdb->query('START TRANSACTION');
+            $strings=(array)get_option(PluginTranslations::OPTION,[]);$catalogs=new PluginTranslations();
+            foreach($strings as $plugin=>&$document){
+                if(!isset(PluginTranslations::plugins()[$plugin]))continue;
+                foreach($catalogs->catalog($plugin,true) as $key=>$row){$sourceValue=$row['source'];$newValue=PluginTranslations::value($plugin,$key,$sourceValue,$locale);foreach([$old=>$sourceValue,$locale=>$newValue] as $language=>$value){$record=$document['locales'][$language][$key]??[];$record['value']=$value;$record['source_hash']=ContentTranslations::hash([$sourceValue]);$document['locales'][$language][$key]=$record;}}
+                $document['revision']=(int)($document['revision']??0)+1;
+            }unset($document);if($strings)update_option(PluginTranslations::OPTION,$strings,false);
             $fields = function_exists('YOOtheme\\app') ? (new FieldPolicy())->all() : [];
             foreach ($pages as $page) {
+                $native=(array)get_post_meta($page->ID,ContentTranslations::KEY,true);
+                $oldValues=ContentTranslations::effective($page->ID,$old);
+                $newValues=ContentTranslations::effective($page->ID,$locale);
+                foreach([$old=>$oldValues,$locale=>$newValues] as $language=>$values)foreach($values as $key=>$value)$native['locales'][$language]['fields'][$key]=['value'=>$value,'source_hash'=>ContentTranslations::hash([$value])];
+                $native['revision']=(int)($native['revision']??0)+1;
+                update_post_meta($page->ID,ContentTranslations::KEY,wp_slash($native));
                 $json = function_exists('YOOtheme\\app') ? \YOOtheme\Builder\Wordpress\PostHelper::matchContent($page->post_content) : null;
                 if ($json) {
                     $tree = json_decode($json,true,100,JSON_THROW_ON_ERROR);

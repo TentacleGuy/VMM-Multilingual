@@ -125,6 +125,29 @@ final class EditorService
         });
     }
 
+    /** Element edits share the overlay store, without resaving/normalizing the layout. */
+    public function saveFields(int $id,array $input): array
+    {
+        return $this->locked($id,function()use($id,$input):array{
+            $locale=$input['locale']??'';
+            if(!is_string($locale)||!isset(\VMM\Multilingual\Site\Languages::all()[$locale])||$locale===\VMM\Multilingual\Site\Languages::source())throw new \InvalidArgumentException('Ungültige Übersetzungssprache.');
+            $current=$this->document($id,$locale,$this->initialize($id));
+            if(($input['source_locale']??'')!==$current['source_locale']||($input['revision']??-1)!==$current['revision']||!hash_equals($current['master_hash'],(string)($input['master_hash']??'')))throw new \RuntimeException('Seite oder Übersetzung inzwischen geändert. Bitte neu laden.');
+            $nodes=[];$walk=function($node)use(&$walk,&$nodes){$nodes[$node['vmm_id']]=$node;foreach($node['children']??[] as $child)$walk($child);};$walk($current['master']);
+            $nodeId=$input['node']??'';$node=$nodes[$nodeId]??null;$changes=$input['fields']??null;
+            if(!$node||!is_array($changes)||!$changes)throw new \InvalidArgumentException('Element oder Felder fehlen.');
+            $records=$current['records'];
+            foreach($changes as $field=>$entry){
+                if(!in_array($field,$current['fields'][$node['type']]??[],true)||array_key_exists($field,$node['source']['props']??[])||!is_array($entry)||!in_array($entry['mode']??'',['inherit','custom'],true)||!is_string($entry['value']??null))throw new \InvalidArgumentException('Ungültiges Elementfeld.');
+                if($entry['mode']==='inherit'){unset($records[$nodeId][$field]);continue;}
+                $edited=$node;$edited['props'][$field]=$entry['value'];$edited=$this->policy->sanitize($edited);
+                $records[$nodeId][$field]=['mode'=>'translate','value'=>$edited['props'][$field],'source_hash'=>TranslationOverlay::sourceHash($node['props'][$field]??'')];
+            }
+            $this->store->save($id,$locale,$current['revision'],$records);
+            return $this->document($id,$locale,$this->initialize($id));
+        });
+    }
+
     private function stripOrigins(array $node): array
     {
         unset($node['vmm_origin_id']);

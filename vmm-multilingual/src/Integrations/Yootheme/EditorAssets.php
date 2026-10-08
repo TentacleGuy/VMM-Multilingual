@@ -5,7 +5,7 @@ namespace VMM\Multilingual\Integrations\Yootheme;
 
 final class EditorAssets
 {
-    private static function widgetNames(): array
+    public static function widgetNames(): array
     {
         global $wp_registered_widgets;
         $names = [];

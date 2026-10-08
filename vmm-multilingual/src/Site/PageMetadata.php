@@ -8,6 +8,10 @@ final class PageMetadata
     public const FIELDS = ['title'=>'Seitentitel','slug'=>'Slug','seo_title'=>'SEO-Titel','description'=>'Meta Description','social_title'=>'Social-Media-Titel','social_description'=>'Social-Media-Beschreibung'];
     public static function value(int $id, string $locale, string $field): string
     {
+        $content = get_post_meta($id, ContentTranslations::KEY, true);
+        foreach (array_unique([$locale, Languages::source()]) as $language) {
+            if (isset($content['locales'][$language]['fields'][$field]['value'])) return (string)$content['locales'][$language]['fields'][$field]['value'];
+        }
         $data = get_post_meta($id, self::KEY, true);
         return (string) (($data['locales'][$locale][$field] ?? '') ?: ($data['locales'][Languages::source()][$field] ?? ''));
     }

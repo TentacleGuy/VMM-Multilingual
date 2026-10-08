@@ -7,13 +7,14 @@ final class Switcher
     public function __construct(private readonly LanguageUrls $urls) {}
     public function render(array $attributes = []): string
     {
-        if (!is_singular('page')) return '';
+        if (!is_singular(ContentTranslations::types())) return '';
         $settings = Settings::get();
         if(is_string($attributes['components']??null))$attributes['components']=array_map('trim',explode(',',$attributes['components']));
         $appearance = Settings::appearance(isset($attributes['components']) || isset($attributes['layout']) ? array_merge($settings,$attributes) : (!empty($attributes['display']) ? $attributes : $settings));
         $hide = isset($attributes['hide_current']) ? filter_var($attributes['hide_current'],FILTER_VALIDATE_BOOLEAN) : $settings['hide_current'];
         $locale = $this->urls->locale(); $links=[]; $current='';
         foreach(Languages::all() as $language=>$data) {
+            if(!ContentTranslations::available(get_queried_object_id(),$language))continue;
             $parts=[];
             if(in_array('flag',$appearance['components'],true)) $parts[]=Languages::flag($data['flag']);
             if(in_array('name',$appearance['components'],true)) $parts[]=esc_html($data['name']);

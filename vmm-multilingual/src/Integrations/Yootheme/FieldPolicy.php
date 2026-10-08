@@ -33,7 +33,7 @@ final class FieldPolicy
                 }
             }
             foreach ($schema['fields'] ?? [] as $field=>$definition) {
-                if (in_array($definition['type'] ?? '', ['link','image','select-widget'], true)) $content[] = $field;
+                if (in_array($definition['type'] ?? '', ['link','image','select-widget'], true) || (preg_match('/(?:aria|alt|title|placeholder|caption)/i',$field)&&in_array($definition['type']??'text',['text','textarea'],true))) $content[] = $field;
             }
             foreach (array_unique($content) as $field) {
                 $definition = $schema['fields'][$field] ?? null;

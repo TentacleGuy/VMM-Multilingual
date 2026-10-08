@@ -14,16 +14,23 @@ final class TranslationScreen
             if (($_GET['page'] ?? '') === 'vmm-settings') wp_enqueue_script('vmm-settings', plugins_url('assets/settings.js', dirname(__DIR__,2).'/vmm-multilingual.php'), [], '0.10.0', true);
         });
         add_action('admin_menu', function (): void {
-            add_menu_page('VMM Multilingual', 'VMM Multilingual', 'edit_pages', 'vmm-multilingual', [$this,'render'], 'dashicons-translation', 59);
-            add_submenu_page('vmm-multilingual','Seitendaten','Seitendaten','edit_pages','vmm-multilingual',[$this,'render']);
+            add_menu_page('VMM Multilingual', 'VMM Multilingual', 'edit_posts', 'vmm-multilingual', [$this,'render'], 'dashicons-translation', 59);
+            add_submenu_page('vmm-multilingual','Übersetzungen','Übersetzungen','edit_posts','vmm-content',[new ContentScreen(),'render']);
             add_submenu_page('vmm-multilingual','Sprachswitcher und URLs','Einstellungen','manage_options','vmm-settings',[$this,'settings']);
         });
-        add_action('admin_post_vmm_save_metadata', [$this,'saveMetadata']);
+        add_action('admin_menu',static function(){remove_submenu_page('vmm-multilingual','vmm-multilingual');},99);
+        add_action('admin_post_vmm_save_metadata',static function(){wp_die('Diese Ansicht wurde durch Übersetzungen ersetzt. Bitte die Seite neu öffnen; bisherige Daten bleiben erhalten.','VMM',['response'=>409,'back_link'=>true]);});
         add_action('admin_post_vmm_save_settings', [$this,'saveSettings']);
-        add_filter('page_row_actions', static function (array $actions, \WP_Post $post): array {
-            if (current_user_can('edit_post',$post->ID)) $actions['vmm'] = '<a href="'.esc_url(admin_url('admin.php?page=vmm-multilingual&object_id='.$post->ID)).'">Sprachdaten / SEO</a>';
-            return $actions;
-        },10,2);
+        add_action('admin_init',static function(): void {
+            if(current_user_can('manage_options')) \VMM\Multilingual\Site\ContentTranslations::migrateMetadata();
+            $page=$_GET['page']??'';
+            if($page==='vmm-multilingual'||$page==='vmm-fields') {
+                $args=$page==='vmm-fields'?['page'=>'vmm-settings','tab'=>'fields']:['page'=>'vmm-content'];
+                if(!empty($_GET['object_id']))$args['object_id']=absint($_GET['object_id']);
+                if(!empty($_GET['locale']))$args['locale']=sanitize_text_field($_GET['locale']);
+                wp_safe_redirect(add_query_arg($args,admin_url('admin.php')));exit;
+            }
+        });
     }
     public function saveMetadata(): void
     {
@@ -113,11 +120,12 @@ final class TranslationScreen
         if (!current_user_can('manage_options')) wp_die('Keine Berechtigung.');
         $settings = Settings::get();
         global $wp_registered_sidebars;
-        $tab=in_array($_GET['tab']??'', ['languages','switcher','urls'],true)?$_GET['tab']:'languages';
+        $tab=in_array($_GET['tab']??'', ['languages','switcher','urls','fields'],true)?$_GET['tab']:'languages';
         echo '<div class="wrap"><h1>VMM Einstellungen</h1><nav class="nav-tab-wrapper" aria-label="Einstellungsbereiche">';
-        foreach(['languages'=>'Sprachen','switcher'=>'Sprachswitcher','urls'=>'URLs & DNS'] as $key=>$label)echo '<a class="nav-tab '.($tab===$key?'nav-tab-active':'').'" href="'.esc_url(admin_url('admin.php?page=vmm-settings&tab='.$key)).'">'.esc_html($label).'</a>';
+        foreach(['languages'=>'Sprachen','switcher'=>'Sprachswitcher','urls'=>'URLs & DNS','fields'=>'Feldregeln'] as $key=>$label)echo '<a class="nav-tab '.($tab===$key?'nav-tab-active':'').'" href="'.esc_url(admin_url('admin.php?page=vmm-settings&tab='.$key)).'">'.esc_html($label).'</a>';
         echo '</nav>';
         if (isset($_GET['saved'])) echo '<div class="notice notice-success"><p>Einstellungen gespeichert.</p></div>';
+        if($tab==='fields'){(new PluginScreen(new \VMM\Multilingual\Site\PluginTranslations()))->rules();echo '</div>';return;}
         if($tab==='languages'){\VMM\Multilingual\Site\Languages::render();echo '</div>';return;}
         echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="vmm_save_settings"><input type="hidden" name="settings_tab" value="'.esc_attr($tab).'">'; wp_nonce_field('vmm_settings');
         echo '<div '.($tab!=='urls'?'hidden':'').'>';
@@ -127,8 +135,8 @@ final class TranslationScreen
         $first=true;$hostOptions='';
         foreach($targets as $locale=>$language) {
             $hostId=$first?'vmm-en_host':'vmm-host-'.$locale;$first=false;
-            $hostOptions.='<option value="'.esc_attr($hostId).'" data-code="'.esc_attr($language['slug']).'">'.esc_html($language['name']).'</option>';
-            echo '<tr><th><label for="'.esc_attr($hostId).'">'.esc_html($language['name']).'-Hostname</label></th><td><input id="'.esc_attr($hostId).'" class="regular-text vmm-language-host" name="settings[language_hosts]['.esc_attr($locale).']" value="'.esc_attr(\VMM\Multilingual\Site\Languages::host($locale)).'"><p class="description">Bei Subdomain: DNS, Webserver und HTTPS auf dieselbe WordPress-Installation richten. Leer verwendet Sprachcode + Basisdomain.</p></td></tr>';
+            $hostOptions.='<option value="'.esc_attr($hostId).'" data-code="'.esc_attr($language['slug']).'">'.esc_html(\VMM\Multilingual\Site\Languages::name($locale)).'</option>';
+            echo '<tr><th><label for="'.esc_attr($hostId).'">'.esc_html(\VMM\Multilingual\Site\Languages::name($locale)).'-Hostname</label></th><td><input id="'.esc_attr($hostId).'" class="regular-text vmm-language-host" name="settings[language_hosts]['.esc_attr($locale).']" value="'.esc_attr(\VMM\Multilingual\Site\Languages::host($locale)).'"><p class="description">Bei Subdomain: DNS, Webserver und HTTPS auf dieselbe WordPress-Installation richten. Leer verwendet Sprachcode + Basisdomain.</p></td></tr>';
         }
         echo '</table><div id="vmm-hosting-planner" hidden><h3>Einrichtung beim Webhosting-Anbieter</h3><p><label>Sprach-Subdomain für die Anleitung <select id="vmm-dns-language">'.$hostOptions.'</select></label></p><p>Auch lokal kannst du hier die spätere öffentliche Domain planen. Diese Vorschau ändert weder WordPress-Adresse noch Sprach-URL-Einstellungen.</p><p><label for="vmm-public-url">Öffentliche WordPress-Adresse</label><br><input type="url" id="vmm-public-url" class="regular-text" placeholder="https://deine-domain.de/"></p><p><label for="vmm-public-en">Öffentlicher Sprachhostname (optional)</label><br><input id="vmm-public-en" class="regular-text" placeholder="Automatisch Sprachcode + Domain"></p><p><label for="vmm-hosting-root">WordPress-Zielverzeichnis im Hosting-Panel (optional)</label><br><input id="vmm-hosting-root" class="regular-text" placeholder="Aus der bestehenden Domain-Zuordnung übernehmen"></p></div>';
         echo '<section id="vmm-subdomain-help" data-home="'.esc_attr(home_url('/')).'" hidden style="background:white;padding:20px;border:1px solid #ccd0d4;max-width:1000px" aria-label="Subdomain-Einrichtung"></section>';

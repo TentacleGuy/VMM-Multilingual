@@ -1,0 +1,150 @@
+diff --git a/includes/i18n.php b/includes/i18n.php
+index 89c9330..7ce1561 100644
+--- a/includes/i18n.php
++++ b/includes/i18n.php
+@@ -2,12 +2,14 @@
+ defined('ABSPATH') || exit;
+ /** Language-specific content; structural configuration always belongs to the source language. */
+ final class FWB_I18n {
++    public const VMM_TRANSLATION_HOOKS = 2;
+     private static ?string $context=null;
+     public static function boot(): void {
+         add_action('admin_init',[self::class,'register']);
+         add_filter('pll_admin_languages_filter',static function($items,$all){$page=$_GET['page']??'';return is_string($page)&&in_array($page,['fwb-form','fwb-templates'],true)?$all:$items;},10,2);
+     }
+     public static function languages(): array {
++        $provided=apply_filters('fwb_i18n_languages',null);if(is_array($provided)&&$provided)return $provided;
+         if(!function_exists('pll_languages_list'))return ['de'=>['name'=>'Deutsch','locale'=>'de_DE']];
+         $slugs=pll_languages_list(['fields'=>'slug','hide_empty'=>false]);
+         $names=pll_languages_list(['fields'=>'name','hide_empty'=>false]);
+@@ -16,6 +18,7 @@ final class FWB_I18n {
+         return $out?:['de'=>['name'=>'Deutsch','locale'=>'de_DE']];
+     }
+     public static function source(): string {
++        $provided=apply_filters('fwb_i18n_source',null);if(is_string($provided)&&isset(self::languages()[$provided]))return $provided;
+         $saved=get_option('fwb_source_language','');if($saved)return $saved;
+         $languages=self::languages();
+         foreach($languages as $slug=>$info)if(str_starts_with($info['locale'],'de'))return $slug;
+@@ -31,7 +34,8 @@ final class FWB_I18n {
+             $lang=function_exists('pll_current_language')?pll_current_language():false;
+             if(!$lang&&function_exists('pll_languages_list'))$lang=get_user_meta(get_current_user_id(),'pll_filter_content',true);
+         }else $lang=function_exists('pll_current_language')?pll_current_language():false;
+-        return is_string($lang)&&isset(self::languages()[$lang])?$lang:self::source();
++        $lang=is_string($lang)&&isset(self::languages()[$lang])?$lang:self::source();
++        return apply_filters('fwb_i18n_current',$lang);
+     }
+     public static function set(?string $lang): ?string { $old=self::$context;self::$context=$lang;return $old; }
+     public static function run(string $lang,callable $fn){$old=self::set($lang);try{return $fn();}finally{self::set($old);}}
+@@ -99,7 +103,7 @@ final class FWB_I18n {
+             foreach(['attributes','control_attributes'] as $group)foreach($b['advanced'][$group]??[] as $i=>$attr)if(in_array($attr['name'],['title','aria-label','aria-description','uk-tooltip'],true))$b['advanced'][$group][$i]['value']=$texts[$b['id'].'/'.$group.'/'.$i]??$attr['value'];
+         }unset($blocks,$b);return $layout;
+     }
+-    public static function layout(array $base): array { return self::with_texts($base,self::overlay(self::texts($base),'layout')); }
++    public static function layout(array $base): array { return apply_filters('fwb_i18n_layout',self::with_texts($base,self::overlay(self::texts($base),'layout'))); }
+     public static function save_layout(array $layout): void {
+         $base=FWB_Layout::base();$base=FWB_Layout::validate(wp_json_encode($base))['layout'];
+         $texts=self::texts($layout);$projected=self::with_texts($base,$texts);
+@@ -110,9 +114,9 @@ final class FWB_I18n {
+     public static function formats(): array {
+         $formats=(array)get_option('fwb_template_formats',[]);
+         if(self::foreign())foreach(['request','confirmed','cancelled','rejected','invoice'] as $kind)if(isset(self::records('templates')[$kind.'_body']))$formats[$kind]='html';
+-        return $formats;
++        return apply_filters('fwb_i18n_formats',$formats);
+     }
+-    public static function signature(): string { return self::overlay(['signature'=>(string)get_option('fwb_mail_signature','')],'templates')['signature']; }
++    public static function signature(): string { return apply_filters('fwb_i18n_signature',self::overlay(['signature'=>(string)get_option('fwb_mail_signature','')],'templates')['signature']); }
+     public static function save_templates(array $t): void {
+         if(self::foreign()){
+             $base=self::run(self::source(),fn()=>FWB_Designer::templates());self::save($base,$t,'templates');
+@@ -123,7 +127,7 @@ final class FWB_I18n {
+     }
+     public const GLOBALS=['property_name'=>'Unterkunftsname','rules'=>'Hausregeln','tax_note'=>'Ortstaxenhinweis','invoice_note'=>'Rechnungshinweis','privacy_url'=>'Datenschutz-Link'];
+     public static function settings(): array {
+-        $s=FWB_Settings::get();return array_replace($s,self::overlay(array_intersect_key($s,self::GLOBALS),'settings'));
++        $s=FWB_Settings::get();return apply_filters('fwb_i18n_settings',array_replace($s,self::overlay(array_intersect_key($s,self::GLOBALS),'settings')));
+     }
+     public static function register(): void {
+         if(!function_exists('pll_register_string'))return;
+@@ -153,7 +157,7 @@ final class FWB_I18n {
+     public static function t(string $text,array $values=[]): string {
+         $translated=function_exists('pll_translate_string')?pll_translate_string($text,self::current()):$text;
+         if($translated===$text&&self::foreign())$translated=self::builtin($text)??$text;
+-        return strtr($translated,$values);
++        return strtr(apply_filters('fwb_i18n_text',$translated,$text),$values);
+     }
+     public static function error(string $text): string {
+         foreach(['Bitte ausfüllen: ','Zu viele Zeichen: '] as $prefix)if(str_starts_with($text,$prefix))return self::t($prefix.'{field}',['{field}'=>substr($text,strlen($prefix))]);
+diff --git a/includes/settings.php b/includes/settings.php
+index 743751c..f8d04eb 100644
+--- a/includes/settings.php
++++ b/includes/settings.php
+@@ -52,7 +52,7 @@ final class FWB_Settings {
+         ];
+     }
+     public static function templates(): array {
+-        return FWB_I18n::overlay(FWB_I18n::base_templates(),'templates');
++        return apply_filters('fwb_i18n_templates',FWB_I18n::overlay(FWB_I18n::base_templates(),'templates'));
+     }
+ 
+     // Upgrade only unchanged factory copy; preserve individually edited templates.
+diff --git a/includes/documents.php b/includes/documents.php
+index f083dc5..1d9d7a9 100644
+--- a/includes/documents.php
++++ b/includes/documents.php
+@@ -17,7 +17,7 @@ final class FWB_Documents {
+         if(preg_match('/^\d{2}\.\d{2}\.\d{4}$/D',$invoiceDate))$invoiceDate=implode('-',array_reverse(explode('.',$invoiceDate)));
+         $v['invoice_date']=FWB_I18n::date($invoiceDate);
+         $v['vat_note']=$q['vat_percent']>0 ? FWB_I18n::t('Enthaltene Umsatzsteuer ({rate} %): {amount}',['{rate}'=>(string)$q['vat_percent'],'{amount}'=>$v['vat']]) : '';
+-        return $v;
++        return apply_filters('fwb_i18n_variables',$v,$b,$invoice);
+     }
+     public static function render(string $template, array $v, bool $html=false): string {
+         $map=[];
+@@ -32,6 +32,7 @@ final class FWB_Documents {
+         $tags=[];
+         foreach (['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','pre','blockquote','table','thead','tbody','tr','th','td','div','span','ul','ol','li','hr'] as $tag) { $tags[$tag]=['style'=>true]; }
+         $tags['a']=['href'=>true,'title'=>true];
++        $tags['img']=['src'=>true,'alt'=>true,'width'=>true,'height'=>true,'style'=>true];
+         $clean=wp_kses($html,$tags);
+         $p=new WP_HTML_Tag_Processor($clean);
+         while ($p->next_tag()) {
+@@ -56,7 +57,7 @@ final class FWB_Documents {
+         return $schema;
+     }
+     public static function pdf_defaults(): array { return ['font'=>'sans','font_size'=>'10','text_color'=>'#26352f','accent'=>'#326451','table_background'=>'#edf4ed','table_color'=>'#26352f','table_border'=>'#dddddd','alignment'=>'left','page_numbers'=>true,'logo_id'=>'0','logo_width'=>'35','margin'=>'17','top'=>'12','bottom'=>'12','header_height'=>'36','footer_height'=>'20']; }
+-    public static function pdf_design(): array { return array_merge(self::pdf_defaults(),(array)get_option('fwb_pdf_design',[])); }
++    public static function pdf_design(): array { return apply_filters('fwb_i18n_pdf_design',array_merge(self::pdf_defaults(),(array)get_option('fwb_pdf_design',[]))); }
+     public static function clean_pdf(array $input): array {
+         $clean=FWB_Design::clean($input,self::pdf_schema());
+         foreach (self::pdf_defaults() as $key=>$value)if(!isset($clean[$key])||$clean[$key]==='')$clean[$key]=$value;
+@@ -112,6 +113,14 @@ final class FWB_Documents {
+         finally{remove_action('phpmailer_init',$hook);}
+     }
+     public static function pdf(string $html): string {
++        // Embed only validated local media; the PDF renderer keeps remote access disabled.
++        $images=new WP_HTML_Tag_Processor($html);
++        while($images->next_tag('IMG')){
++            $src=(string)$images->get_attribute('src');if(str_starts_with($src,'data:image/'))continue;
++            $id=attachment_url_to_postid($src);
++            if($id)$images->set_attribute('src',self::logo($id));else $images->remove_attribute('src');
++        }
++        $html=$images->get_updated_html();
+         $loader=FWB_DIR . 'lib/dompdf/autoload.inc.php';
+         if (!file_exists($loader)) { throw new RuntimeException('Die PDF-Bibliothek fehlt. Bitte die vollständige Plugin-ZIP installieren.'); }
+         require_once $loader;
+@@ -171,7 +180,14 @@ final class FWB_Documents {
+     }
+     public static function notify(int $id): void {
+         $b=FWB_Store::get($id); $s=FWB_Settings::get();
+-        $ok=wp_mail($s['admin_email'],'Neue Buchungsanfrage ' . $b['reference'],"Neue Anfrage von " . $b['name'] . "\n" . $b['arrival'] . ' bis ' . $b['departure'] . "\n\n" . admin_url('admin.php?page=fwb-bookings&booking=' . $id).self::signature(self::variables($b),true));
++        $ok=FWB_I18n::run(FWB_I18n::booking($b),static function()use($b,$s,$id){
++            $t=FWB_Settings::templates();$v=self::variables($b);$v['booking_admin_url']=admin_url('admin.php?page=fwb-bookings&booking='.$id);
++            $subject=self::render($t['host_subject']??'Neue Buchungsanfrage {booking_number}',$v);
++            $body=self::render($t['host_body']??"Neue Anfrage von {name}\n{arrival} bis {departure}\n\n{booking_admin_url}",$v);
++            return (FWB_I18n::formats()['host']??'text')==='html'
++                ?self::send_html($s['admin_email'],sanitize_text_field($subject),self::email_html($t['host_body'],$v))
++                :wp_mail($s['admin_email'],sanitize_text_field($subject),$body.self::signature($v,true));
++        });
+         FWB_Store::event($id,$ok?'mail_accepted':'mail_failed','Benachrichtigung an Gastgeber.');
+     }
+ }
