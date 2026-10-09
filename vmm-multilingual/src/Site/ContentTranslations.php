@@ -73,6 +73,8 @@ final class ContentTranslations
         }
         return $values;
     }
+    /** Ignore the harmless paragraph wrappers introduced by the visual rich-text editor. */
+    public static function sameValue(string $a,string $b): bool { $normalize=static fn($v)=>trim(preg_replace('/\s+/u',' ',html_entity_decode(preg_replace('/<\/?p(?:\s[^>]*)?>|<br\s*\/?>/i',"\n",$v),ENT_QUOTES|ENT_HTML5,'UTF-8')));return $normalize($a)===$normalize($b); }
     public static function hash(array $values): string { return hash('sha256',wp_json_encode($values)); }
     public static function document(int $id,string $locale): array {
         $post=get_post($id);$data=(array)get_post_meta($id,self::KEY,true);$source=self::effective($id,Languages::source());
@@ -101,7 +103,7 @@ final class ContentTranslations
                 if($type==='image' && $value!=='0' && (!wp_attachment_is_image((int)$value)))throw new \InvalidArgumentException('Bitte ein Bild aus der Mediathek auswählen.');
                 if($key==='slug')$value=sanitize_title($value);
                 if($key==='slug'&&($value===''||in_array($value,array_merge(array_column(Languages::all(),'slug'),['wp-admin','wp-json','feed','wp-login.php']),true)))throw new \InvalidArgumentException('Bitte einen nicht reservierten Slug eingeben.');
-                $records[$key]=['value'=>$value,'source_hash'=>self::hash([$doc['source'][$key]])];
+                $records[$key]=['value'=>$value,'confirmed_same'=>!empty($entry['confirmed_same'])&&self::sameValue($value,$doc['source'][$key]),'source_hash'=>self::hash([$doc['source'][$key]])];
             }
             if(isset($records['slug'])) {
                 $urls=new LanguageUrls();$current=$urls->path($id,$locale);

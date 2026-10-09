@@ -1,4 +1,4 @@
-param([string]$Version='0.15.0')
+param([string]$Version='0.16.0')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $source=Join-Path $root 'vmm-multilingual'
@@ -20,6 +20,6 @@ try {
 }finally{$zip.Dispose();$stream.Dispose()}
 $hash=(Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText($out+'.sha256',$hash+'  '+[IO.Path]::GetFileName($out)+"`n")
-$manifest=[ordered]@{name='VMM Multilingual';version=$Version;requires='6.1';requires_php='8.1';tested='7.1.3';download_url=('https://github.com/TentacleGuy/VMM-Multilingual/releases/download/v'+$Version+'/vmm-multilingual-'+$Version+'.zip');last_updated=[DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss');sha256=$hash;changelog='<p>GitHub-Updates in WordPress, visueller Übersetzungseditor und Bearbeitung nachgeladener Plugin-Elemente. Gemeinsame Übersetzungen für YOOtheme, WordPress und angebundene Plugin-Inhalte.</p>'}
+$manifest=[ordered]@{name='VMM Multilingual';version=$Version;requires='6.1';requires_php='8.1';tested='7.1.3';download_url=('https://github.com/TentacleGuy/VMM-Multilingual/releases/download/v'+$Version+'/vmm-multilingual-'+$Version+'.zip');last_updated=[DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss');sha256=$hash;changelog='<p>Verbesserter visueller Editor mit gemeinsamem Entwurf, Live-Vorschau, Undo/Redo, Feldstatus und vollständiger Seitenrücksetzung. Menüübersetzungen und WYSIWYG-Bearbeitung.</p>'}
 [IO.File]::WriteAllText((Join-Path $root 'releases/update.json'),($manifest|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 Write-Output ('Built '+$out)

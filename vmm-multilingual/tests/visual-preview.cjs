@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const js=fs.readFileSync(__dirname+'/../assets/visual-editor.js','utf8'),ctx={};vm.createContext(ctx);vm.runInContext(js.slice(js.indexOf(' function previewFieldTarget('),js.indexOf(' function renderDraftPreview(')),ctx);
+const element=(selectors,owner=null)=>({children:[],matches:s=>s.split(',').some(x=>selectors.includes(x)),querySelectorAll:()=>[],closest:()=>owner});
+let checks=0;const eq=(actual,expected)=>{assert.equal(actual,expected);checks++;};
+const button=element(['.el-content','a']);eq(ctx.previewFieldTarget(button,'content'),button);
+const text=element(['div']);eq(ctx.previewFieldTarget(text,'content','text'),text);
+const headline=element(['h1']);eq(ctx.previewFieldTarget(headline,'content'),headline);
+const panel=element(['div']),title=element(['.el-title'],panel),content=element(['.el-content'],panel),meta=element(['.el-meta'],panel),nested=element(['.el-title'],{});
+panel.querySelectorAll=s=>[nested,title,content,meta].filter(n=>n.matches(s));
+eq(ctx.previewFieldTarget(panel,'title'),title);eq(ctx.previewFieldTarget(panel,'content'),content);eq(ctx.previewFieldTarget(panel,'meta'),meta);
+const link=element(['a'],panel);title.children=[link];eq(ctx.previewFieldTarget(panel,'title'),link);
+const wrapper=element(['div']);wrapper.querySelectorAll=()=>[nested];eq(ctx.previewFieldTarget(wrapper,'title'),undefined);eq(ctx.previewFieldTarget(wrapper,'content'),undefined);
+console.log('PASS '+checks+' exact preview field binding checks');

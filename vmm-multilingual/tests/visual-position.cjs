@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const js=fs.readFileSync(__dirname+'/../assets/visual-editor.js','utf8'),context={};vm.createContext(context);vm.runInContext(js.slice(js.indexOf(' function anchorPosition('),js.indexOf(' async function paintPreview(')),context);
+const rect=(left,top,width,height)=>({left,top,width,height,right:left+width,bottom:top+height});
+const doc={documentElement:{}},clip={ownerDocument:doc,parentElement:null,getBoundingClientRect:()=>rect(100,100,500,300)},image={ownerDocument:doc,parentElement:clip},win={innerWidth:1000,innerHeight:800,getComputedStyle:n=>({display:'block',visibility:'visible',opacity:'1',overflowX:n===clip?'hidden':'visible',overflowY:n===clip?'hidden':'visible',...n.style})};
+let count=0;const check=(v,e)=>{assert.deepEqual(JSON.parse(JSON.stringify(v)),e);count++;};
+check(context.anchorPosition({rect:rect(150,150,80,30),element:image,image:false},win),{x:150,y:131});
+check(context.anchorPosition({rect:rect(150,150,300,200),element:image,image:true},win),{x:155,y:155});
+check(context.anchorPosition({rect:rect(250,150,300,200),element:image,image:true},win),{x:255,y:155});
+check(context.anchorPosition({rect:rect(610,150,300,200),element:image,image:true},win),null);
+check(context.anchorPosition({rect:rect(-50,150,300,200),element:image,image:true},win),null);
+check(context.anchorPosition({rect:rect(150,90,300,200),element:image,image:true},win),null);
+image.style={opacity:'0'};check(context.anchorPosition({rect:rect(150,150,300,200),element:image,image:true},win),null);
+image.style={visibility:'hidden'};check(context.anchorPosition({rect:rect(150,150,300,200),element:image,image:true},win),null);
+console.log('PASS '+count+' preview positioning checks');

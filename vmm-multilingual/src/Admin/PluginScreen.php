@@ -6,7 +6,7 @@ final class PluginScreen
 {
     public function __construct(private readonly Strings $strings){}
     public function register(): void {
-        add_action('admin_enqueue_scripts',static function(){if(($_GET['page']??'')==='vmm-plugins'){wp_enqueue_media();wp_enqueue_script('vmm-plugin-resources',plugins_url('assets/plugin-resources.js',dirname(__DIR__,2).'/vmm-multilingual.php'),[],(string)filemtime(dirname(__DIR__,2).'/assets/plugin-resources.js'),true);wp_enqueue_style('vmm-plugin-resources',plugins_url('assets/plugin-resources.css',dirname(__DIR__,2).'/vmm-multilingual.php'),[],(string)filemtime(dirname(__DIR__,2).'/assets/plugin-resources.css'));}});
+        add_action('admin_enqueue_scripts',static function(){if(($_GET['page']??'')==='vmm-plugins'){wp_enqueue_media();wp_enqueue_editor();wp_enqueue_script('vmm-plugin-resources',plugins_url('assets/plugin-resources.js',dirname(__DIR__,2).'/vmm-multilingual.php'),['editor'],(string)filemtime(dirname(__DIR__,2).'/assets/plugin-resources.js'),true);wp_enqueue_style('vmm-plugin-resources',plugins_url('assets/plugin-resources.css',dirname(__DIR__,2).'/vmm-multilingual.php'),[],(string)filemtime(dirname(__DIR__,2).'/assets/plugin-resources.css'));}});
         add_action('admin_post_vmm_discovery',static function(){
             if(!current_user_can('manage_options'))wp_die('Keine Berechtigung.');check_admin_referer('vmm_discovery');
             $key='vmm_discovery_'.get_current_user_id();if(($_POST['mode']??'')==='start')set_transient($key,1,15*MINUTE_IN_SECONDS);else delete_transient($key);

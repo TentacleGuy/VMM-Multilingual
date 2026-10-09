@@ -141,7 +141,7 @@ final class EditorService
                 if(!in_array($field,$current['fields'][$node['type']]??[],true)||array_key_exists($field,$node['source']['props']??[])||!is_array($entry)||!in_array($entry['mode']??'',['inherit','custom'],true)||!is_string($entry['value']??null))throw new \InvalidArgumentException('Ungültiges Elementfeld.');
                 if($entry['mode']==='inherit'){unset($records[$nodeId][$field]);continue;}
                 $edited=$node;$edited['props'][$field]=$entry['value'];$edited=$this->policy->sanitize($edited);
-                $records[$nodeId][$field]=['mode'=>'translate','value'=>$edited['props'][$field],'source_hash'=>TranslationOverlay::sourceHash($node['props'][$field]??'')];
+                $records[$nodeId][$field]=['mode'=>'translate','value'=>$edited['props'][$field],'confirmed_same'=>!empty($entry['confirmed_same'])&&\VMM\Multilingual\Site\ContentTranslations::sameValue((string)$edited['props'][$field],(string)($node['props'][$field]??'')),'source_hash'=>TranslationOverlay::sourceHash($node['props'][$field]??'')];
             }
             $this->store->save($id,$locale,$current['revision'],$records);
             return $this->document($id,$locale,$this->initialize($id));

@@ -91,11 +91,11 @@ final class PluginTranslations
             $records=$doc['locales'][$locale]??[];
             foreach($input as $key=>$entry){if(!isset($rows[$key])||!is_array($entry))throw new \InvalidArgumentException('Unbekannter Plugin-Inhalt.');if(($entry['mode']??'')==='inherit'){unset($records[$key]);continue;}if(($entry['mode']??'')!=='custom'||!is_string($entry['value']??null))throw new \InvalidArgumentException('Ungültiger Plugin-Inhalt.');$value=$entry['value'];
                 // Untouched records keep their source hash and cannot block unrelated edits.
-                if(isset($records[$key]['value'])&&$records[$key]['value']===$value)continue;
+                if(isset($records[$key]['value'])&&$records[$key]['value']===$value&&(!array_key_exists('confirmed_same',$entry)||(bool)($records[$key]['confirmed_same']??false)===(bool)$entry['confirmed_same']))continue;
                 if(self::placeholders($source[$key])!==self::placeholders($value))throw new \InvalidArgumentException('Platzhalter müssen erhalten bleiben: '.$rows[$key]['label']);
                 $value=apply_filters('vmm_plugin_validate_value',$value,$plugin,$key,$locale);
                 $value=in_array($rows[$key]['type'],['url','image'],true)?esc_url_raw($value,['http','https','mailto','tel']):wp_kses_post($value);
-                $records[$key]=['value'=>$value,'source_hash'=>ContentTranslations::hash([$source[$key]])];
+                $records[$key]=['value'=>$value,'confirmed_same'=>!empty($entry['confirmed_same'])&&ContentTranslations::sameValue($value,$source[$key]),'source_hash'=>ContentTranslations::hash([$source[$key]])];
                 if(isset($rows[$key]['domain']))$records[$key]['gettext']=array_intersect_key($rows[$key],array_flip(['domain','context','text','plural','form']));
             }
             $doc['locales'][$locale]=$records;$doc['revision']=$revision+1;$data[$plugin]=$doc;update_option(self::OPTION,$data,false);

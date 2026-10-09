@@ -2,7 +2,7 @@
 /**
  * Plugin Name: VMM Multilingual
  * Description: Sprachabhängige Inhalte für einen gemeinsamen YOOtheme-Master. Technische Testversion.
- * Version: 0.15.0
+ * Version: 0.16.0
  * Plugin URI: https://github.com/TentacleGuy/VMM-Multilingual
  * Update URI: https://github.com/TentacleGuy/VMM-Multilingual
  * Requires PHP: 8.1
